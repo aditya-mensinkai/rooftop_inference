@@ -1,18 +1,18 @@
 """
 Rooftop Segmentation Inference Script
 
-Predicts rooftop segmentation mask from a single satellite image,
-calculates area metrics, and estimates solar potential.
+Predicts rooftop segmentation mask from a single satellite image
+and calculates area metrics.
 
 Usage:
-    python predict.py --image_path sample.tif --gsd 0.5 --state Karnataka
+    python predict.py --image_path sample.tif --gsd 0.5
     python predict.py --image_path sample.tif --threshold 0.4 --min_area 100 --top_k 20
 
 Output:
     - outputs/mask.png         : Binary segmentation mask
     - outputs/viz.png          : Side-by-side visualization
     - outputs/debug_prob.png   : Debug view (original, probability, cleaned mask)
-    - Console                  : Area and solar metrics with post-processing stats
+    - Console                  : Area metrics with post-processing stats
 """
 
 import argparse
@@ -28,7 +28,7 @@ import torch
 import torch.nn.functional as F
 from PIL import Image
 
-from area_utils import area_to_solar_metrics, pixels_to_area
+from area_utils import pixels_to_area
 from model import UNetResNet34
 
 # Configure logging
@@ -409,7 +409,6 @@ def save_outputs(
 
 def print_results(
     area_info: dict,
-    solar_info: dict,
     threshold: float,
     roof_pixels_pct: float,
     components_before: int,
@@ -420,16 +419,11 @@ def print_results(
 
     Args:
         area_info: Output from pixels_to_area()
-        solar_info: Output from area_to_solar_metrics()
         threshold: Threshold value used
         roof_pixels_pct: Percentage of pixels predicted as roof
         components_before: Number of components before filtering
         components_after: Number of components after filtering
     """
-    # Format currency
-    cost_inr = solar_info["estimated_system_cost_inr"]
-    cost_formatted = f"₹{cost_inr:,.0f}"
-
     print("\n" + "=" * 50)
     print("===== POST-PROCESSING STATS =====")
     print("=" * 50)
@@ -444,14 +438,6 @@ def print_results(
     print(f"Roof pixels:     {area_info['roof_pixels']:,.0f}")
     print(f"Total area:      {area_info['total_roof_area_m2']:,.1f} m²")
     print(f"Usable area:     {area_info['usable_area_m2']:,.1f} m²")
-    print()
-    print("=" * 50)
-    print("===== SOLAR ESTIMATION =====")
-    print("=" * 50)
-    print(f"Capacity:        {solar_info['system_kw_capacity']:.2f} kW")
-    print(f"Annual energy:   {solar_info['annual_kwh']:,.0f} kWh")
-    print(f"System cost:     {cost_formatted}")
-    print(f"CO₂ saved:       {solar_info['co2_offset_kg_per_year']:,.0f} kg/year")
     print("=" * 50 + "\n")
 
 
@@ -506,7 +492,7 @@ def parse_args() -> argparse.Namespace:
         epilog="""
 Examples:
   python predict.py --image_path sample.tif
-  python predict.py --image_path sample.tif --gsd 0.3 --state Maharashtra
+  python predict.py --image_path sample.tif --gsd 0.3
   python predict.py --image_path sample.tif --threshold 0.4 --min_area 100 --top_k 20
   python predict.py --image_path sample.tif --smooth --threshold 0.35
         """,
@@ -538,13 +524,6 @@ Examples:
         type=int,
         default=None,
         help="Zoom level if using Google Maps images (e.g., 18 or 19)",
-    )
-
-    parser.add_argument(
-        "--state",
-        type=str,
-        default="Karnataka",
-        help="Indian state for solar calculations (default: Karnataka)",
     )
 
     parser.add_argument(
@@ -659,10 +638,6 @@ def main() -> int:
         logger.info("Calculating area metrics...")
         area_info = pixels_to_area(binary_mask, gsd=gsd)
 
-        # Calculate solar metrics
-        logger.info(f"Calculating solar metrics for {args.state}...")
-        solar_info = area_to_solar_metrics(area_info["usable_area_m2"], state=args.state)
-
         # Save outputs
         logger.info(f"Saving outputs to {args.output_dir}/")
         save_outputs(original, binary_mask, args.output_dir)
@@ -673,7 +648,6 @@ def main() -> int:
         # Print results with post-processing stats
         print_results(
             area_info,
-            solar_info,
             args.threshold,
             roof_pixels_pct,
             components_before,
